@@ -1,0 +1,19 @@
+# Binaries
+bin/
+*.exe
+
+# Data
+data/*.json
+!data/.gitkeep
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

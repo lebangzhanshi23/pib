@@ -1,0 +1,16 @@
+app:
+  name: PIB
+  port: 8081
+
+database:
+  path: ./data/pib.db
+
+llm:
+  provider: deepseek  # openai or deepseek
+  api_key: ${DEEPSEEK_API_KEY}
+  model: deepseek-chat
+  # model: gpt-4o-mini
+
+srs:
+  initial_ef: 2.5
+  min_ef: 1.3
