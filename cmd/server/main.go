@@ -36,6 +36,14 @@ func main() {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
+	// Serve static frontend at /app path
+	r.Static("/app", "frontend")
+
+	// Redirect root to /app
+	r.GET("/", func(c *gin.Context) {
+		c.Redirect(302, "/app")
+	})
+
 	// API routes
 	v1 := r.Group("/api/v1")
 	{
