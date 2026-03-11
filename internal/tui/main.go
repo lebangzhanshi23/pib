@@ -11,6 +11,7 @@ const (
 	PageList PageType = iota
 	PageDetail
 	PageAdd
+	PageConfig
 )
 
 // MainModel is the root model that manages page navigation
@@ -19,6 +20,7 @@ type MainModel struct {
 	listModel    *QuestionListModel
 	detailModel  *QuestionDetailModel
 	addModel     *AddQuestionModel
+	configModel  *ConfigModel
 }
 
 // NewMainModel creates a new main model
@@ -28,6 +30,7 @@ func NewMainModel() *MainModel {
 		listModel:   NewQuestionListModel(),
 		detailModel: NewQuestionDetailModel(),
 		addModel:    NewAddQuestionModel(),
+		configModel: NewConfigModel(),
 	}
 }
 
@@ -73,6 +76,11 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.currentPage = PageAdd
 			m.listModel.AddingNew = false
 		}
+		// Check if config was triggered
+		if m.listModel.OpenConfig {
+			m.currentPage = PageConfig
+			m.listModel.OpenConfig = false
+		}
 		return m, cmd
 
 	case PageDetail:
@@ -96,6 +104,16 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.listModel.LoadQuestions()
 		}
 		return m, cmd
+
+	case PageConfig:
+		cfg, cmd := m.configModel.Update(msg)
+		m.configModel = cfg.(*ConfigModel)
+		// Check if config was completed or cancelled
+		if m.configModel.Completed || m.configModel.Cancelled {
+			m.currentPage = PageList
+			m.configModel = NewConfigModel()
+		}
+		return m, cmd
 	}
 
 	return m, nil
@@ -110,6 +128,8 @@ func (m *MainModel) View() string {
 		return m.detailModel.View()
 	case PageAdd:
 		return m.addModel.View()
+	case PageConfig:
+		return m.configModel.View()
 	default:
 		return "Unknown page"
 	}

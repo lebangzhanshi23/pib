@@ -41,6 +41,7 @@ type QuestionListModel struct {
 	SelectedID      string
 	SelectedContent string
 	AddingNew       bool
+	OpenConfig      bool
 	loading         bool
 	err             error
 }
@@ -135,6 +136,8 @@ func (m *QuestionListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "n":
 			m.AddingNew = true
+		case "c":
+			m.OpenConfig = true
 		case "r":
 			m.loading = true
 			return m, m.LoadQuestions()
@@ -216,7 +219,7 @@ func (m *QuestionListModel) View() string {
 		s += "\n\n"
 	}
 
-	help := helpStyle.Render("↑/↓: Navigate  Enter: View  n: Add new  r: Refresh  q: Quit")
+	help := helpStyle.Render("↑/↓: Navigate  Enter: View  n: Add new  c: Config  r: Refresh  q: Quit")
 	s += help
 
 	return s

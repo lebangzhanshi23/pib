@@ -34,6 +34,11 @@ type SRSConfig struct {
 	MinEF     float64 `yaml:"min_ef"`
 }
 
+// MarshalYAML marshals config to YAML
+func MarshalYAML(cfg *Config) ([]byte, error) {
+	return yaml.Marshal(cfg)
+}
+
 // Load loads configuration from a YAML file
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)

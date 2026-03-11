@@ -1,41 +1,112 @@
 package tui
 
 import (
-	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 
 	"pib/internal/model"
+	"pib/internal/repository"
 
 	"github.com/google/uuid"
 )
 
-// QuestionsData represents the JSON structure
+// QuestionsData represents the JSON structure (kept for backward compatibility)
 type QuestionsData struct {
-	Questions []model.Question `json:"questions"`
-	Tags      []model.Tag       `json:"tags"`
+	Questions    []model.Question       `json:"questions"`
+	Tags         []model.Tag            `json:"tags"`
+	QuestionTags []QuestionTagRelation  `json:"question_tags"`
+}
+
+// QuestionTagRelation represents a question-tag relationship in JSON
+type QuestionTagRelation struct {
+	QuestionID string `json:"question_id"`
+	TagID      string `json:"tag_id"`
 }
 
 const dataFilePath = "data/pib.json"
 
-// loadQuestionsFromFile loads questions from the JSON file
-func loadQuestionsFromFile() ([]model.Question, error) {
+// db is the global database instance
+var db *repository.SQLiteDB
+
+// initDB initializes the database connection
+func initDB() error {
+	if db != nil {
+		return nil
+	}
+
 	// Get current working directory
-	wd, err := os.Getwd()
+	wd, err := getWorkingDir()
+	if err != nil {
+		return err
+	}
+
+	// Try multiple paths to find the database
+	dbPaths := []string{
+		filepath.Join(wd, "data", "pib.db"),
+		filepath.Join(wd, "..", "data", "pib.db"),
+		filepath.Join(wd, "..", "..", "data", "pib.db"),
+		filepath.Join(wd, "..", "..", "..", "data", "pib.db"),
+	}
+
+	for _, dbPath := range dbPaths {
+		db, err = repository.NewSQLiteDB(dbPath)
+		if err == nil {
+			return nil
+		}
+	}
+
+	// If all paths fail, return the last error
+	return err
+}
+
+// loadQuestionsFromFile loads questions from SQLite database
+func loadQuestionsFromFile() ([]model.Question, error) {
+	// Initialize database if needed
+	if err := initDB(); err != nil {
+		// Fall back to JSON file if SQLite fails
+		fmt.Fprintf(os.Stderr, "[DEBUG] initDB failed, falling back to JSON: %v\n", err)
+		return loadQuestionsFromJSON()
+	}
+
+	// Load questions from SQLite
+	questions, err := db.ListQuestionsByStatus("")
+	if err != nil {
+		// Fall back to JSON on error
+		fmt.Fprintf(os.Stderr, "[DEBUG] ListQuestionsByStatus error, falling back to JSON: %v\n", err)
+		return loadQuestionsFromJSON()
+	}
+
+	fmt.Fprintf(os.Stderr, "[DEBUG] Loaded %d questions from SQLite\n", len(questions))
+
+	// If no questions in DB, try JSON (for backward compatibility)
+	if len(questions) == 0 {
+		fmt.Fprintf(os.Stderr, "[DEBUG] SQLite empty, falling back to JSON\n")
+		return loadQuestionsFromJSON()
+	}
+
+	return questions, nil
+}
+
+// loadQuestionsFromJSON loads questions from the JSON file (fallback)
+func loadQuestionsFromJSON() ([]model.Question, error) {
+	// Get current working directory
+	wd, err := getWorkingDir()
 	if err != nil {
 		return nil, err
 	}
 
-	// Try different paths
+	// Try multiple paths to find the JSON file
 	paths := []string{
-		filepath.Join(wd, dataFilePath),
-		filepath.Join(wd, "..", dataFilePath),
-		filepath.Join(wd, "..", "..", dataFilePath),
+		filepath.Join(wd, "data", "pib.json"),
+		filepath.Join(wd, "..", "data", "pib.json"),
+		filepath.Join(wd, "..", "..", "data", "pib.json"),
+		filepath.Join(wd, "..", "..", "..", "data", "pib.json"),
 	}
 
 	var data []byte
 	for _, p := range paths {
-		data, err = os.ReadFile(p)
+		data, err = readFile(p)
 		if err == nil {
 			break
 		}
@@ -47,15 +118,46 @@ func loadQuestionsFromFile() ([]model.Question, error) {
 	}
 
 	var questionsData QuestionsData
-	if err := json.Unmarshal(data, &questionsData); err != nil {
+	if err := unmarshalJSON(data, &questionsData); err != nil {
 		return nil, err
+	}
+
+	// Build tag lookup map
+	tagMap := make(map[string]model.Tag)
+	for _, tag := range questionsData.Tags {
+		tagMap[tag.ID] = tag
+	}
+
+	// Build question-tag relationships
+	qtMap := make(map[string][]model.Tag)
+	for _, qt := range questionsData.QuestionTags {
+		if tag, ok := tagMap[qt.TagID]; ok {
+			qtMap[qt.QuestionID] = append(qtMap[qt.QuestionID], tag)
+		}
+	}
+
+	// Attach tags to questions
+	for i := range questionsData.Questions {
+		qid := questionsData.Questions[i].ID
+		if tags, ok := qtMap[qid]; ok {
+			questionsData.Questions[i].Tags = tags
+		}
 	}
 
 	return questionsData.Questions, nil
 }
 
-// loadQuestionByID loads a single question by ID
+// loadQuestionByID loads a single question by ID from SQLite
 func loadQuestionByID(id string) *model.Question {
+	// Try SQLite first
+	if db != nil {
+		q, err := db.GetQuestionByID(id)
+		if err == nil && q != nil {
+			return q
+		}
+	}
+
+	// Fall back to JSON
 	questions, err := loadQuestionsFromFile()
 	if err != nil {
 		return nil
@@ -70,24 +172,60 @@ func loadQuestionByID(id string) *model.Question {
 	return nil
 }
 
-// saveQuestion saves a new question to the JSON file
+// saveQuestion saves a new question to SQLite
 func saveQuestion(content, answer, tagsStr string) error {
+	// Initialize database if needed
+	if err := initDB(); err != nil {
+		// Fall back to JSON file if SQLite fails
+		return saveQuestionToJSON(content, answer, tagsStr)
+	}
+
+	// Create new question
+	q := &model.Question{
+		ID:      uuid.New().String(),
+		Content: content,
+		Answer:  answer,
+		Status:  model.StatusDraft,
+		EF:      2.5,
+	}
+
+	if err := db.CreateQuestion(q); err != nil {
+		return err
+	}
+
+	// Handle tags
+	if tagsStr != "" {
+		tagNames := parseTags(tagsStr)
+		for _, name := range tagNames {
+			tag, err := db.GetOrCreateTag(name)
+			if err == nil && tag != nil {
+				db.AddTagToQuestion(q.ID, tag.ID)
+			}
+		}
+	}
+
+	return nil
+}
+
+// saveQuestionToJSON saves a new question to the JSON file (fallback)
+func saveQuestionToJSON(content, answer, tagsStr string) error {
 	// Get current working directory
-	wd, err := os.Getwd()
+	wd, err := getWorkingDir()
 	if err != nil {
 		return err
 	}
 
-	// Try different paths
+	// Try different paths (from cmd/tui)
 	paths := []string{
-		filepath.Join(wd, dataFilePath),
-		filepath.Join(wd, "..", dataFilePath),
 		filepath.Join(wd, "..", "..", dataFilePath),
+		filepath.Join(wd, "..", dataFilePath),
+		filepath.Join(wd, dataFilePath),
 	}
 
 	var filePath string
 	for _, p := range paths {
-		if _, err := os.Stat(p); err == nil {
+		_, err := osStat(p)
+		if err == nil {
 			filePath = p
 			break
 		}
@@ -100,8 +238,8 @@ func saveQuestion(content, answer, tagsStr string) error {
 
 	// Read existing data
 	var questionsData QuestionsData
-	if data, err := os.ReadFile(filePath); err == nil {
-		json.Unmarshal(data, &questionsData)
+	if data, err := readFile(filePath); err == nil {
+		unmarshalJSON(data, &questionsData)
 	}
 
 	// Create new question
@@ -115,8 +253,6 @@ func saveQuestion(content, answer, tagsStr string) error {
 
 	// Parse tags
 	if tagsStr != "" {
-		// Simple tag parsing - in real app, would handle this better
-		// Just add to question's Tags field
 		tagNames := parseTags(tagsStr)
 		for _, name := range tagNames {
 			// Check if tag exists
@@ -142,12 +278,12 @@ func saveQuestion(content, answer, tagsStr string) error {
 	questionsData.Questions = append(questionsData.Questions, q)
 
 	// Write back to file
-	data, err := json.MarshalIndent(questionsData, "", "  ")
+	data, err := marshalJSON(questionsData)
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(filePath, data, 0644)
+	return writeFile(filePath, data)
 }
 
 // parseTags parses comma-separated tags
