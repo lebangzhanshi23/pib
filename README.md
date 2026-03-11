@@ -1,15 +1,43 @@
 # PIB - Personal Interview Brain
 
-面试复习闭环系统：LLM 结构化输入 + 间隔重复算法 (SM-2)
+打破"看题就懂，说题就懵"的怪圈。
 
-## 功能
+## 1. 核心愿景 (Vision)
 
-- 📝 结构化输入：丢入面试笔记，AI 提取 Q&A
-- 🧠 间隔重复：基于 SM-2 算法智能安排复习时间
-- 🏷️ 标签管理：按标签筛选题目
-- 📊 复习记录：追踪学习进度
+通过 AI 语义比对与逻辑纠偏，配合遗忘曲线，在终端环境下（TUI）低调且高效地构建系统化的面试知识库。
 
-## 快速开始
+## 2. 目标用户 (User Persona)
+
+- **身份**: 准备跳槽或巩固技术的后端开发者
+- **痛点**:
+  - 看面经容易走神，缺乏交互感
+  - 表达能力弱，面试时逻辑混乱
+  - 在公司看网页面经太显眼，容易被老板发现
+  - 碎片化知识多，难以形成长效记忆
+
+## 3. 产品特点
+
+- 🎯 **TUI 终端界面**: 低调高效，在公司使用不显眼
+- 🧠 **AI 辅助**: 语义比对 + 逻辑纠偏
+- 📅 **遗忘曲线**: 基于 SM-2 算法智能安排复习
+- 💾 **本地存储**: SQLite，数据安全可控
+
+## 4. 版本规划
+
+### V0.1 (MVP)
+- [ ] SQLite 基础存储
+- [ ] Bubble Tea 列表页面
+- [ ] 题目 CRUD
+
+### V0.2
+- [ ] AI 语义比对
+- [ ] 复习提醒
+
+### V0.3
+- [ ] 语音练习模式
+- [ ] 模拟面试
+
+## 5. 快速开始
 
 ```bash
 # 启动服务
@@ -18,33 +46,8 @@ go run ./cmd/server
 # API 端口: 8081
 ```
 
-## API
+## 6. 技术栈
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | /api/v1/questions | 创建题目 |
-| GET | /api/v1/questions | 获取题目列表 |
-| GET | /api/v1/questions/review | 获取待复习题目 |
-| POST | /api/v1/questions/:id/review | 提交复习 (grade: 0-2) |
-| DELETE | /api/v1/questions/:id | 删除题目 |
-
-## Grade 说明
-
-| Grade | 含义 | 间隔变化 |
-|-------|------|----------|
-| 0 | Forgot (忘记) | 重置为 1 天 |
-| 1 | Vague (模糊) | × 1.2 |
-| 2 | Remembered (记住) | × EF |
-
-## 配置
-
-修改 `config/config.yaml`:
-```yaml
-app:
-  port: 8081
-
-llm:
-  provider: deepseek
-  api_key: ${DEEPSEEK_API_KEY}
-  model: deepseek-chat
-```
+- **后端**: Go + SQLite
+- **前端**: Bubble Tea (TUI)
+- **LLM**: DeepSeek (可配置)
