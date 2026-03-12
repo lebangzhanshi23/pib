@@ -45,6 +45,7 @@ type QuestionDetailModel struct {
 	answer       string
 	tags         []string
 	BackToList   bool
+	StartPractice bool
 	// AI Scout fields
 	scoutResult  *agent.ScoutResult
 	scoutLoading bool
@@ -100,6 +101,11 @@ func (m *QuestionDetailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.scoutLoading = true
 				m.scoutError = ""
 				return m, m.runAIScout()
+			}
+		case "p":
+			// Start immersive practice mode
+			if m.showScout == 0 && !m.scoutLoading {
+				m.StartPractice = true
 			}
 		case "1":
 			// Show beginner answer
@@ -228,8 +234,11 @@ func (m *QuestionDetailModel) View() string {
 			s += "\n\n"
 		}
 
+		// Practice button
+		s += buttonStyle.Render(" p: 开始练习 ") + "\n\n"
+
 		// Navigation help
-		s += "\n" + helpStyle.Render("esc/b: Back to list  a: AI Scout  q: Quit")
+		s += "\n" + helpStyle.Render("esc/b: Back to list  a: AI Scout  p: Practice  q: Quit")
 	}
 
 	return s

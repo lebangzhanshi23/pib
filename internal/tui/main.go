@@ -13,27 +13,30 @@ const (
 	PageAdd
 	PageConfig
 	PageImport
+	PagePractice
 )
 
 // MainModel is the root model that manages page navigation
 type MainModel struct {
-	currentPage  PageType
-	listModel    *QuestionListModel
-	detailModel  *QuestionDetailModel
-	addModel     *AddQuestionModel
-	configModel  *ConfigModel
-	importModel  *ImportPageModel
+	currentPage   PageType
+	listModel     *QuestionListModel
+	detailModel   *QuestionDetailModel
+	addModel      *AddQuestionModel
+	configModel   *ConfigModel
+	importModel   *ImportPageModel
+	practiceModel *PracticeModel
 }
 
 // NewMainModel creates a new main model
 func NewMainModel() *MainModel {
 	return &MainModel{
-		currentPage: PageList,
-		listModel:   NewQuestionListModel(),
-		detailModel: NewQuestionDetailModel(),
-		addModel:    NewAddQuestionModel(),
-		configModel: NewConfigModel(),
-		importModel: NewImportPageModel(),
+		currentPage:   PageList,
+		listModel:     NewQuestionListModel(),
+		detailModel:   NewQuestionDetailModel(),
+		addModel:      NewAddQuestionModel(),
+		configModel:   NewConfigModel(),
+		importModel:   NewImportPageModel(),
+		practiceModel: NewPracticeModel(),
 	}
 }
 
@@ -100,6 +103,13 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detailModel.BackToList = false
 			return m, m.listModel.LoadQuestions()
 		}
+		// Check if we should start practice
+		if m.detailModel.StartPractice {
+			m.detailModel.StartPractice = false
+			// Set up practice model with current question
+			m.practiceModel.SetQuestion(m.detailModel.questionID, m.detailModel.content, m.detailModel.answer)
+			m.currentPage = PagePractice
+		}
 		return m, cmd
 
 	case PageAdd:
@@ -133,6 +143,16 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.listModel.LoadQuestions()
 		}
 		return m, cmd
+
+	case PagePractice:
+		practice, cmd := m.practiceModel.Update(msg)
+		m.practiceModel = practice.(*PracticeModel)
+		// Check if practice was completed or cancelled
+		if m.practiceModel.Completed || m.practiceModel.Cancelled {
+			m.currentPage = PageDetail
+			m.practiceModel = NewPracticeModel()
+		}
+		return m, cmd
 	}
 
 	return m, nil
@@ -151,6 +171,8 @@ func (m *MainModel) View() string {
 		return m.configModel.View()
 	case PageImport:
 		return m.importModel.View()
+	case PagePractice:
+		return m.practiceModel.View()
 	default:
 		return "Unknown page"
 	}
