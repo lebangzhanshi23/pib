@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 
@@ -10,6 +11,30 @@ import (
 )
 
 func main() {
+	// Command line flags
+	importFile := flag.String("import", "", "Import questions from Markdown file or directory")
+	flag.Parse()
+
+	// Handle import from command line
+	if *importFile != "" {
+		fmt.Printf("Importing from: %s\n", *importFile)
+		result, err := tui.ImportFromMarkdownFile(*importFile)
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Import completed!\n")
+		fmt.Printf("  Total: %d\n", result.TotalQuestions)
+		fmt.Printf("  Imported: %d\n", result.ImportedCount)
+		if len(result.Errors) > 0 {
+			fmt.Println("  Errors:")
+			for _, e := range result.Errors {
+				fmt.Printf("    - %s\n", e)
+			}
+		}
+		return
+	}
+
 	// Test mode for debugging
 	if os.Getenv("TEST_MODE") == "1" {
 		fmt.Println("Running in test mode...")

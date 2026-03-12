@@ -62,7 +62,7 @@
 - [x] LLM 集成配置
 
 ### V0.2
-- [ ] Markdown 批量导入
+- [x] Markdown 批量导入
 - [ ] 多维度标签系统
 - [ ] AI Scout 自动生成参考答案
 

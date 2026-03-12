@@ -12,15 +12,17 @@ const (
 	PageDetail
 	PageAdd
 	PageConfig
+	PageImport
 )
 
 // MainModel is the root model that manages page navigation
 type MainModel struct {
-	currentPage PageType
+	currentPage  PageType
 	listModel    *QuestionListModel
 	detailModel  *QuestionDetailModel
 	addModel     *AddQuestionModel
 	configModel  *ConfigModel
+	importModel  *ImportPageModel
 }
 
 // NewMainModel creates a new main model
@@ -31,6 +33,7 @@ func NewMainModel() *MainModel {
 		detailModel: NewQuestionDetailModel(),
 		addModel:    NewAddQuestionModel(),
 		configModel: NewConfigModel(),
+		importModel: NewImportPageModel(),
 	}
 }
 
@@ -76,6 +79,11 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.currentPage = PageAdd
 			m.listModel.AddingNew = false
 		}
+		// Check if import was triggered
+		if m.listModel.OpenImport {
+			m.currentPage = PageImport
+			m.listModel.OpenImport = false
+		}
 		// Check if config was triggered
 		if m.listModel.OpenConfig {
 			m.currentPage = PageConfig
@@ -114,6 +122,17 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.configModel = NewConfigModel()
 		}
 		return m, cmd
+
+	case PageImport:
+		imp, cmd := m.importModel.Update(msg)
+		m.importModel = imp.(*ImportPageModel)
+		// Check if import was completed or cancelled
+		if m.importModel.Completed || m.importModel.Cancelled {
+			m.currentPage = PageList
+			m.importModel = NewImportPageModel()
+			return m, m.listModel.LoadQuestions()
+		}
+		return m, cmd
 	}
 
 	return m, nil
@@ -130,6 +149,8 @@ func (m *MainModel) View() string {
 		return m.addModel.View()
 	case PageConfig:
 		return m.configModel.View()
+	case PageImport:
+		return m.importModel.View()
 	default:
 		return "Unknown page"
 	}
