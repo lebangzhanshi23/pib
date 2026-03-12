@@ -162,10 +162,18 @@ func (s *SQLiteDB) DeleteQuestion(id string) error {
 	return s.db.Delete(&Question{}, "id = ?", id).Error
 }
 
-// ListQuestionsByStatus lists questions by status
+// ListQuestionsByStatus lists questions by status (empty string means all)
 func (s *SQLiteDB) ListQuestionsByStatus(status string) ([]model.Question, error) {
 	var questions []Question
-	if err := s.db.Find(&questions, "status = ?", status).Error; err != nil {
+	var err error
+	
+	if status == "" {
+		err = s.db.Find(&questions).Error
+	} else {
+		err = s.db.Find(&questions, "status = ?", status).Error
+	}
+	
+	if err != nil {
 		return nil, err
 	}
 
@@ -272,6 +280,76 @@ func (s *SQLiteDB) GetTagsForQuestion(qid string) ([]model.Tag, error) {
 	result := make([]model.Tag, len(tags))
 	for i, t := range tags {
 		result[i] = *toModelTag(&t)
+	}
+	return result, nil
+}
+
+// GetAllTags returns all tags
+func (s *SQLiteDB) GetAllTags() ([]model.Tag, error) {
+	var tags []Tag
+	err := s.db.Order("name ASC").Find(&tags).Error
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]model.Tag, len(tags))
+	for i, t := range tags {
+		result[i] = *toModelTag(&t)
+	}
+	return result, nil
+}
+
+// GetQuestionsByTag returns questions with a specific tag
+func (s *SQLiteDB) GetQuestionsByTag(tagName string) ([]model.Question, error) {
+	var questions []Question
+	err := s.db.
+		Joins("JOIN question_tags ON questions.id = question_tags.question_id").
+		Joins("JOIN tags ON tags.id = question_tags.tag_id").
+		Where("tags.name = ?", tagName).
+		Find(&questions).Error
+	
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]model.Question, len(questions))
+	for i, q := range questions {
+		result[i] = *toModelQuestion(&q)
+	}
+	return result, nil
+}
+
+// DeleteTag deletes a tag by ID
+func (s *SQLiteDB) DeleteTag(id string) error {
+	// First remove all relationships
+	if err := s.db.Where("tag_id = ?", id).Delete(&QuestionTagRel{}).Error; err != nil {
+		return err
+	}
+	// Then delete the tag
+	return s.db.Delete(&Tag{}, "id = ?", id).Error
+}
+
+// GetQuestionCountByTag returns the count of questions for each tag
+func (s *SQLiteDB) GetQuestionCountByTag() (map[string]int, error) {
+	type TagCount struct {
+		Name  string
+		Count int
+	}
+	var tagCounts []TagCount
+	err := s.db.Model(&Tag{}).
+		Select("tags.name, COUNT(question_tags.question_id) as count").
+		Joins("LEFT JOIN question_tags ON tags.id = question_tags.tag_id").
+		Group("tags.id").
+		Order("count DESC").
+		Find(&tagCounts).Error
+	
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]int)
+	for _, tc := range tagCounts {
+		result[tc.Name] = tc.Count
 	}
 	return result, nil
 }
