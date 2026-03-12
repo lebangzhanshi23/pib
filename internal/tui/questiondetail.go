@@ -1,6 +1,10 @@
 package tui
 
 import (
+	"fmt"
+
+	"pib/internal/agent"
+
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -41,6 +45,11 @@ type QuestionDetailModel struct {
 	answer       string
 	tags         []string
 	BackToList   bool
+	// AI Scout fields
+	scoutResult  *agent.ScoutResult
+	scoutLoading bool
+	scoutError   string
+	showScout    int  // 0: detail, 1: beginner, 2: expert, 3: bigtech
 }
 
 // NewQuestionDetailModel creates a new detail model
@@ -74,13 +83,87 @@ func (m *QuestionDetailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc":
-			m.BackToList = true
+			if m.showScout > 0 {
+				m.showScout = 0
+			} else {
+				m.BackToList = true
+			}
 		case "b":
-			m.BackToList = true
+			if m.showScout > 0 {
+				m.showScout = 0
+			} else {
+				m.BackToList = true
+			}
+		case "a":
+			// Trigger AI Scout
+			if !m.scoutLoading && m.showScout == 0 {
+				m.scoutLoading = true
+				m.scoutError = ""
+				return m, m.runAIScout()
+			}
+		case "1":
+			// Show beginner answer
+			if m.scoutResult != nil && m.showScout == 0 {
+				m.showScout = 1
+			}
+		case "2":
+			// Show expert answer
+			if m.scoutResult != nil && m.showScout == 0 {
+				m.showScout = 2
+			}
+		case "3":
+			// Show big tech answer
+			if m.scoutResult != nil && m.showScout == 0 {
+				m.showScout = 3
+			}
 		}
+
+	case ScoutResultMsg:
+		m.scoutLoading = false
+		m.scoutResult = msg.Result
+
+	case ScoutErrorMsg:
+		m.scoutLoading = false
+		m.scoutError = msg.Error
 	}
 
 	return m, nil
+}
+
+// runAIScout runs the AI Scout in background
+func (m *QuestionDetailModel) runAIScout() tea.Cmd {
+	return func() tea.Msg {
+		// Load config
+		cfg, err := agent.LoadConfig()
+		if err != nil {
+			return ScoutErrorMsg{Error: fmt.Sprintf("配置加载失败: %v", err)}
+		}
+
+		if cfg.LLM.APIKey == "" {
+			return ScoutErrorMsg{Error: "请先配置 LLM API Key (按 c 进入配置)"}
+		}
+
+		// Create LLM client
+		client := agent.NewLLMClient(cfg)
+
+		// Generate answers
+		result, err := client.GenerateAnswers(m.content, m.tags)
+		if err != nil {
+			return ScoutErrorMsg{Error: fmt.Sprintf("生成失败: %v", err)}
+		}
+
+		return ScoutResultMsg{Result: result}
+	}
+}
+
+// ScoutResultMsg represents AI Scout result message
+type ScoutResultMsg struct {
+	Result *agent.ScoutResult
+}
+
+// ScoutErrorMsg represents AI Scout error message
+type ScoutErrorMsg struct {
+	Error string
 }
 
 // View renders the detail page
@@ -94,23 +177,60 @@ func (m *QuestionDetailModel) View() string {
 	s += normalStyle.Render("Question:") + "\n"
 	s += detailContentStyle.Render(m.content) + "\n\n"
 
-	// Answer
-	if m.answer != "" {
+	// Answer (only show manual answer in detail view, not scout)
+	if m.answer != "" && m.showScout == 0 {
 		s += normalStyle.Render("Answer:") + "\n"
 		s += detailAnswerStyle.Render(m.answer) + "\n\n"
 	}
 
-	// Tags
-	if len(m.tags) > 0 {
-		s += normalStyle.Render("Tags:") + " "
-		for _, tag := range m.tags {
-			s += tagStyle.Render(tag)
+	// AI Scout Results
+	if m.showScout > 0 && m.scoutResult != nil {
+		var answerTitle, answerContent string
+		switch m.showScout {
+		case 1:
+			answerTitle = "🌱 入门级答案"
+			answerContent = m.scoutResult.Beginner
+		case 2:
+			answerTitle = "🚀 专家级答案"
+			answerContent = m.scoutResult.Expert
+		case 3:
+			answerTitle = "🏢 大厂面试官版"
+			answerContent = m.scoutResult.BigTech
 		}
-		s += "\n\n"
-	}
 
-	// Navigation help
-	s += "\n" + helpStyle.Render("esc/b: Back to list  q: Quit")
+		s += lipgloss.NewStyle().Foreground(lipgloss.Color("82")).Bold(true).Render(answerTitle) + "\n"
+		s += detailAnswerStyle.Render(answerContent) + "\n\n"
+
+		// Back to detail
+		s += helpStyle.Render("esc/b: 返回题目详情") + "\n"
+	} else {
+		// AI Scout Button
+		if m.scoutLoading {
+			s += normalStyle.Render("🤖 AI Scout 生成中...") + "\n\n"
+		} else if m.scoutError != "" {
+			s += lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render("⚠️ "+m.scoutError) + "\n\n"
+			s += buttonStyle.Render("  a: 重试 ") + "\n\n"
+		} else if m.scoutResult != nil {
+			s += normalStyle.Render("🤖 AI 答案已生成:") + "\n"
+			s += buttonStyle.Render(" 1: 入门级 ") + " "
+			s += buttonStyle.Render(" 2: 专家级 ") + " "
+			s += buttonStyle.Render(" 3: 大厂版 ") + "\n\n"
+		} else {
+			s += buttonStyle.Render("  a: AI Scout 生成参考答案 ") + "\n\n"
+		}
+
+		// Tags
+		if len(m.tags) > 0 {
+			s += normalStyle.Render("Tags:") + " "
+			for _, tag := range m.tags {
+				s += tagStyle.Render(tag)
+			}
+			s += "\n\n"
+		}
+
+		// Navigation help
+		s += "\n" + helpStyle.Render("esc/b: Back to list  a: AI Scout  q: Quit")
+	}
 
 	return s
 }
