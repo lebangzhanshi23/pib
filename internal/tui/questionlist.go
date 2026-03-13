@@ -47,6 +47,7 @@ type QuestionListModel struct {
 	err             error
 	filterTag       string   // Current filter tag
 	allTags         []string // All available tags
+	showDueOnly     bool     // Show only questions due for review
 }
 
 // QuestionItem represents a question in the list
@@ -71,11 +72,14 @@ func (m *QuestionListModel) LoadQuestions() tea.Cmd {
 	return func() tea.Msg {
 		// Initialize database if needed
 		if err := initDB(); err == nil {
-			// Try to load from SQLite with tag filter
+			// Try to load from SQLite with tag filter or due for review
 			var questions []model.Question
 			var err error
 			
-			if m.filterTag != "" {
+			if m.showDueOnly {
+				// Load questions due for review
+				questions, err = db.GetQuestionsForReview(50)
+			} else if m.filterTag != "" {
 				questions, err = db.GetQuestionsByTag(m.filterTag)
 			} else {
 				questions, err = db.ListQuestionsByStatus("")
@@ -213,6 +217,7 @@ func (m *QuestionListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "t":
 			// Cycle through tags for filtering
 			m.loading = true
+			m.showDueOnly = false // Clear due filter when cycling tags
 			if len(m.allTags) == 0 {
 				m.loading = false
 				m.filterTag = ""
@@ -234,6 +239,12 @@ func (m *QuestionListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, m.LoadQuestions()
 			}
+		case "d":
+			// Toggle showing only due questions
+			m.loading = true
+			m.showDueOnly = !m.showDueOnly
+			m.filterTag = "" // Clear tag filter when toggling due
+			return m, m.LoadQuestions()
 		}
 	}
 
@@ -260,7 +271,9 @@ func (m *QuestionListModel) View() string {
 	header := titleStyle.Render("📚 PIB - Question Library")
 	
 	// Show filter status
-	if m.filterTag != "" {
+	if m.showDueOnly {
+		header += " " + lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Render("📅 Due for Review")
+	} else if m.filterTag != "" {
 		header += " " + tagStyle.Render("Filter: "+m.filterTag)
 	}
 	
@@ -327,7 +340,7 @@ func (m *QuestionListModel) View() string {
 		s += "\n\n"
 	}
 
-	help := helpStyle.Render("↑/↓: Navigate  Enter: View  n: Add new  i: Import  c: Config  t: Filter by tag  r: Refresh  q: Quit")
+	help := helpStyle.Render("↑/↓: Navigate  Enter: View  n: Add new  i: Import  c: Config  t: Filter by tag  d: Due for review  r: Refresh  q: Quit")
 	s += help
 
 	return s

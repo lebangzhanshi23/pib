@@ -6,6 +6,7 @@ import (
 
 	"pib/internal/agent"
 	"pib/internal/model"
+	"pib/internal/service"
 
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -162,7 +163,7 @@ func (m *PracticeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// submitAnswer saves the user's answer to the database
+// submitAnswer saves the user's answer to the database with SM-2 scheduling
 func (m *PracticeModel) submitAnswer() {
 	if m.questionID == "" || m.userAnswer == "" {
 		return
@@ -185,6 +186,16 @@ func (m *PracticeModel) submitAnswer() {
 			} else {
 				q.Answer = practiceAnswer
 			}
+
+			// Apply SM-2 algorithm to calculate next review time
+			// Default to GradeVague (1) for manual practice without AI
+			sm2Calc := service.NewSM2Calculator(2.5, 1.3)
+			result := sm2Calc.Calculate(q.EF, q.Interval, model.GradeVague)
+			
+			// Update question with SM-2 calculated values
+			q.EF = result.NewEF
+			q.Interval = result.NewInterval
+			q.NextReviewAt = &result.NextReviewAt
 			
 			db.UpdateQuestion(q)
 		}
@@ -401,6 +412,53 @@ func (m *PracticeWithAIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.compareResult = msg.Result
 		}
 		m.savedAnswer = true
+
+		// Apply SM-2 algorithm based on AI scores
+		if m.compareResult != nil && db != nil {
+			// Calculate overall score
+			overallScore := (m.compareResult.SemanticScore + m.compareResult.ExpressionScore) / 2
+
+			// Determine grade based on AI score
+			var grade int
+			if overallScore >= 70 {
+				grade = model.GradeRemembered
+			} else if overallScore >= 40 {
+				grade = model.GradeVague
+			} else {
+				grade = model.GradeForgot
+			}
+
+			// Load question and update with SM-2 calculated values
+			q, err := db.GetQuestionByID(m.questionID)
+			if err == nil && q != nil {
+				// Append user's answer to the question
+				practiceAnswer := fmt.Sprintf("[Practice %s - Score: %.0f]\n%s",
+					time.Now().Format("2006-01-02 15:04"), overallScore, m.userAnswer)
+				if q.Answer != "" {
+					q.Answer = q.Answer + "\n\n" + practiceAnswer
+				} else {
+					q.Answer = practiceAnswer
+				}
+
+				// Apply SM-2 algorithm
+				sm2Calc := service.NewSM2Calculator(2.5, 1.3)
+				result := sm2Calc.Calculate(q.EF, q.Interval, grade)
+
+				// Update question with SM-2 calculated values
+				q.EF = result.NewEF
+				q.Interval = result.NewInterval
+				q.NextReviewAt = &result.NextReviewAt
+
+				db.UpdateQuestion(q)
+
+				// Create review log with the grade
+				reviewLog := &model.ReviewLog{
+					QuestionID: m.questionID,
+					Grade:      grade,
+				}
+				db.CreateReviewLog(reviewLog)
+			}
+		}
 	}
 
 	return m, nil
