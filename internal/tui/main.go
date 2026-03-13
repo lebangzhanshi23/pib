@@ -14,29 +14,33 @@ const (
 	PageConfig
 	PageImport
 	PagePractice
+	PagePracticeAI
 )
 
 // MainModel is the root model that manages page navigation
 type MainModel struct {
-	currentPage   PageType
-	listModel     *QuestionListModel
-	detailModel   *QuestionDetailModel
-	addModel      *AddQuestionModel
-	configModel   *ConfigModel
-	importModel   *ImportPageModel
-	practiceModel *PracticeModel
+	currentPage     PageType
+	listModel       *QuestionListModel
+	detailModel     *QuestionDetailModel
+	addModel        *AddQuestionModel
+	configModel     *ConfigModel
+	importModel     *ImportPageModel
+	practiceModel   *PracticeModel
+	practiceAIModel *PracticeWithAIModel
 }
 
 // NewMainModel creates a new main model
 func NewMainModel() *MainModel {
+	practiceAIModel, _ := NewPracticeWithAIModel() // Will be nil if LLM not configured
 	return &MainModel{
-		currentPage:   PageList,
-		listModel:     NewQuestionListModel(),
-		detailModel:   NewQuestionDetailModel(),
-		addModel:      NewAddQuestionModel(),
-		configModel:   NewConfigModel(),
-		importModel:   NewImportPageModel(),
-		practiceModel: NewPracticeModel(),
+		currentPage:     PageList,
+		listModel:       NewQuestionListModel(),
+		detailModel:     NewQuestionDetailModel(),
+		addModel:        NewAddQuestionModel(),
+		configModel:     NewConfigModel(),
+		importModel:     NewImportPageModel(),
+		practiceModel:   NewPracticeModel(),
+		practiceAIModel: practiceAIModel,
 	}
 }
 
@@ -110,6 +114,15 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.practiceModel.SetQuestion(m.detailModel.questionID, m.detailModel.content, m.detailModel.answer)
 			m.currentPage = PagePractice
 		}
+		// Check if we should start AI practice
+		if m.detailModel.StartPracticeAI {
+			m.detailModel.StartPracticeAI = false
+			// Check if AI model is available
+			if m.practiceAIModel != nil {
+				m.practiceAIModel.SetQuestion(m.detailModel.questionID, m.detailModel.content, m.detailModel.answer)
+				m.currentPage = PagePracticeAI
+			}
+		}
 		return m, cmd
 
 	case PageAdd:
@@ -153,6 +166,20 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.practiceModel = NewPracticeModel()
 		}
 		return m, cmd
+
+	case PagePracticeAI:
+		if m.practiceAIModel != nil {
+			practiceAI, cmd := m.practiceAIModel.Update(msg)
+			m.practiceAIModel = practiceAI.(*PracticeWithAIModel)
+			// Check if practice was completed or cancelled
+			if m.practiceAIModel.Completed || m.practiceAIModel.Cancelled {
+				m.currentPage = PageDetail
+				// Create new AI model if needed
+				m.practiceAIModel, _ = NewPracticeWithAIModel()
+			}
+			return m, cmd
+		}
+		return m, nil
 	}
 
 	return m, nil
@@ -173,6 +200,11 @@ func (m *MainModel) View() string {
 		return m.importModel.View()
 	case PagePractice:
 		return m.practiceModel.View()
+	case PagePracticeAI:
+		if m.practiceAIModel != nil {
+			return m.practiceAIModel.View()
+		}
+		return "AI Practice not available. Please configure LLM first."
 	default:
 		return "Unknown page"
 	}
