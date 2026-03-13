@@ -39,7 +39,7 @@ func main() {
 	if os.Getenv("TEST_MODE") == "1" {
 		fmt.Println("Running in test mode...")
 		// This will trigger loading questions
-		model := tui.NewMainModel()
+		model := tui.NewMainModel(tui.GetDB())
 		// We can't call Init directly as it returns a tea.Cmd
 		// Instead, let's just run the program briefly
 		p := tea.NewProgram(model, tea.WithoutSignalHandler())
@@ -51,7 +51,7 @@ func main() {
 	}
 
 	p := tea.NewProgram(
-		tui.NewMainModel(),
+		tui.NewMainModel(tui.GetDB()),
 		tea.WithAltScreen(),
 		tea.WithMouseAllMotion(),
 	)

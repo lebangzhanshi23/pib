@@ -381,3 +381,96 @@ func mkdirAll(path string) error {
 	// Simple implementation for Windows compatibility
 	return nil
 }
+
+// GetQuestionCountByStatus returns the count of questions by status
+func (s *SQLiteDB) GetQuestionCountByStatus() (map[string]int, error) {
+	type StatusCount struct {
+		Status string
+		Count  int
+	}
+	var statusCounts []StatusCount
+	err := s.db.Model(&Question{}).
+		Select("status, COUNT(*) as count").
+		Group("status").
+		Find(&statusCounts).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]int)
+	for _, sc := range statusCounts {
+		result[sc.Status] = sc.Count
+	}
+	return result, nil
+}
+
+// GetTagScores returns the average EF score for each tag (for radar chart)
+func (s *SQLiteDB) GetTagScores() (map[string]float64, error) {
+	type TagScore struct {
+		Name     string
+		AvgEF    float64
+		AvgGrade float64
+	}
+	var tagScores []TagScore
+	err := s.db.Model(&Question{}).
+		Select("tags.name, AVG(questions.ef) as avg_ef, COALESCE(AVG(review_logs.grade), 0) as avg_grade").
+		Joins("LEFT JOIN question_tags ON questions.id = question_tags.question_id").
+		Joins("LEFT JOIN tags ON tags.id = question_tags.tag_id").
+		Joins("LEFT JOIN review_logs ON questions.id = review_logs.question_id").
+		Where("tags.name IS NOT NULL").
+		Group("tags.id").
+		Find(&tagScores).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]float64)
+	for _, ts := range tagScores {
+		// Normalize to 0-100 scale: EF ranges from 1.3 to 2.5
+		score := ((ts.AvgEF - 1.3) / (2.5 - 1.3)) * 100
+		if score < 0 {
+			score = 0
+		}
+		if score > 100 {
+			score = 100
+		}
+		result[ts.Name] = score
+	}
+	return result, nil
+}
+
+// GetTotalQuestionCount returns the total number of questions
+func (s *SQLiteDB) GetTotalQuestionCount() (int64, error) {
+	var count int64
+	err := s.db.Model(&Question{}).Count(&count).Error
+	return count, err
+}
+
+// GetReviewStats returns review statistics
+func (s *SQLiteDB) GetReviewStats() (map[string]interface{}, error) {
+	type Stat struct {
+		TotalReviews int64
+		TotalGrades  float64
+	}
+	var stat Stat
+	
+	err := s.db.Model(&ReviewLog{}).
+		Select("COUNT(*) as total_reviews, COALESCE(SUM(grade), 0) as total_grades").
+		Scan(&stat).Error
+	
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]interface{})
+	result["total_reviews"] = stat.TotalReviews
+	result["total_questions_reviewed"] = stat.TotalReviews
+	if stat.TotalReviews > 0 {
+		result["avg_grade"] = stat.TotalGrades / float64(stat.TotalReviews)
+	} else {
+		result["avg_grade"] = 0.0
+	}
+	return result, nil
+}

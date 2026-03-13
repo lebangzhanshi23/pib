@@ -318,3 +318,11 @@ func trimSpace(s string) string {
 	}
 	return s[start:end]
 }
+
+// GetDB returns the database instance
+func GetDB() *repository.SQLiteDB {
+	if db == nil {
+		initDB()
+	}
+	return db
+}

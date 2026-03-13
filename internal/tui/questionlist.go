@@ -43,6 +43,7 @@ type QuestionListModel struct {
 	AddingNew       bool
 	OpenConfig      bool
 	OpenImport      bool
+	OpenAnalytics   bool
 	loading         bool
 	err             error
 	filterTag       string   // Current filter tag
@@ -210,6 +211,8 @@ func (m *QuestionListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.OpenImport = true
 		case "c":
 			m.OpenConfig = true
+		case "a":
+			m.OpenAnalytics = true
 		case "r":
 			m.loading = true
 			m.filterTag = "" // Clear filter on refresh
@@ -340,7 +343,7 @@ func (m *QuestionListModel) View() string {
 		s += "\n\n"
 	}
 
-	help := helpStyle.Render("↑/↓: Navigate  Enter: View  n: Add new  i: Import  c: Config  t: Filter by tag  d: Due for review  r: Refresh  q: Quit")
+	help := helpStyle.Render("↑/↓: Navigate  Enter: View  n: Add new  i: Import  c: Config  a: Analytics  t: Filter by tag  d: Due for review  r: Refresh  q: Quit")
 	s += help
 
 	return s

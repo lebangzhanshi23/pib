@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"pib/internal/repository"
+
 	"github.com/charmbracelet/bubbletea"
 )
 
@@ -15,6 +17,7 @@ const (
 	PageImport
 	PagePractice
 	PagePracticeAI
+	PageAnalytics
 )
 
 // MainModel is the root model that manages page navigation
@@ -27,11 +30,23 @@ type MainModel struct {
 	importModel     *ImportPageModel
 	practiceModel   *PracticeModel
 	practiceAIModel *PracticeWithAIModel
+	analyticsModel  *AnalyticsModel
+	db              *repository.SQLiteDB
 }
 
 // NewMainModel creates a new main model
-func NewMainModel() *MainModel {
+func NewMainModel(db *repository.SQLiteDB) *MainModel {
 	practiceAIModel, _ := NewPracticeWithAIModel() // Will be nil if LLM not configured
+	analyticsModel := NewAnalyticsModel()
+	
+	// Load analytics data
+	if db != nil {
+		statusCounts, tagScores, totalCount, reviewStats, err := LoadAnalytics(db)
+		if err == nil {
+			analyticsModel.SetData(statusCounts, tagScores, totalCount, reviewStats)
+		}
+	}
+	
 	return &MainModel{
 		currentPage:     PageList,
 		listModel:       NewQuestionListModel(),
@@ -41,6 +56,8 @@ func NewMainModel() *MainModel {
 		importModel:     NewImportPageModel(),
 		practiceModel:   NewPracticeModel(),
 		practiceAIModel: practiceAIModel,
+		analyticsModel:  analyticsModel,
+		db:              db,
 	}
 }
 
@@ -57,8 +74,10 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 		case "esc":
-			// Go back to list from detail or add
-			if m.currentPage != PageList {
+			// Go back to list from detail or add or analytics
+			if m.currentPage == PageAnalytics {
+				m.currentPage = PageList
+			} else if m.currentPage != PageList {
 				m.currentPage = PageList
 				return m, m.listModel.LoadQuestions()
 			}
@@ -95,6 +114,18 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.listModel.OpenConfig {
 			m.currentPage = PageConfig
 			m.listModel.OpenConfig = false
+		}
+		// Check if analytics was triggered
+		if m.listModel.OpenAnalytics {
+			m.currentPage = PageAnalytics
+			m.listModel.OpenAnalytics = false
+			// Refresh analytics data when opening
+			if m.db != nil {
+				statusCounts, tagScores, totalCount, reviewStats, err := LoadAnalytics(m.db)
+				if err == nil {
+					m.analyticsModel.SetData(statusCounts, tagScores, totalCount, reviewStats)
+				}
+			}
 		}
 		return m, cmd
 
@@ -180,6 +211,16 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		return m, nil
+
+	case PageAnalytics:
+		analytics, cmd := m.analyticsModel.Update(msg)
+		m.analyticsModel = analytics.(*AnalyticsModel)
+		// Check if we should go back to list
+		if m.analyticsModel.Cancelled {
+			m.currentPage = PageList
+			m.analyticsModel.Cancelled = false
+		}
+		return m, cmd
 	}
 
 	return m, nil
@@ -205,6 +246,8 @@ func (m *MainModel) View() string {
 			return m.practiceAIModel.View()
 		}
 		return "AI Practice not available. Please configure LLM first."
+	case PageAnalytics:
+		return m.analyticsModel.View()
 	default:
 		return "Unknown page"
 	}
