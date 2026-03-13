@@ -18,6 +18,7 @@ const (
 	PagePractice
 	PagePracticeAI
 	PageAnalytics
+	PageBossMode
 )
 
 // MainModel is the root model that manages page navigation
@@ -31,6 +32,7 @@ type MainModel struct {
 	practiceModel   *PracticeModel
 	practiceAIModel *PracticeWithAIModel
 	analyticsModel  *AnalyticsModel
+	bossModeModel   *BossModeModel
 	db              *repository.SQLiteDB
 }
 
@@ -38,6 +40,7 @@ type MainModel struct {
 func NewMainModel(db *repository.SQLiteDB) *MainModel {
 	practiceAIModel, _ := NewPracticeWithAIModel() // Will be nil if LLM not configured
 	analyticsModel := NewAnalyticsModel()
+	bossModeModel := NewBossModeModel()
 	
 	// Load analytics data
 	if db != nil {
@@ -57,6 +60,7 @@ func NewMainModel(db *repository.SQLiteDB) *MainModel {
 		practiceModel:   NewPracticeModel(),
 		practiceAIModel: practiceAIModel,
 		analyticsModel:  analyticsModel,
+		bossModeModel:   bossModeModel,
 		db:              db,
 	}
 }
@@ -73,10 +77,22 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
+		case "ctrl+b":
+			// Toggle Boss Mode
+			if m.currentPage == PageBossMode {
+				m.currentPage = PageList
+				// Reload questions when exiting boss mode
+				return m, m.listModel.LoadQuestions()
+			} else {
+				m.currentPage = PageBossMode
+			}
 		case "esc":
-			// Go back to list from detail or add or analytics
+			// Go back to list from detail or add or analytics or boss mode
 			if m.currentPage == PageAnalytics {
 				m.currentPage = PageList
+			} else if m.currentPage == PageBossMode {
+				m.currentPage = PageList
+				return m, m.listModel.LoadQuestions()
 			} else if m.currentPage != PageList {
 				m.currentPage = PageList
 				return m, m.listModel.LoadQuestions()
@@ -221,6 +237,11 @@ func (m *MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.analyticsModel.Cancelled = false
 		}
 		return m, cmd
+
+	case PageBossMode:
+		boss, cmd := m.bossModeModel.Update(msg)
+		m.bossModeModel = boss.(*BossModeModel)
+		return m, cmd
 	}
 
 	return m, nil
@@ -248,6 +269,8 @@ func (m *MainModel) View() string {
 		return "AI Practice not available. Please configure LLM first."
 	case PageAnalytics:
 		return m.analyticsModel.View()
+	case PageBossMode:
+		return m.bossModeModel.View()
 	default:
 		return "Unknown page"
 	}

@@ -81,7 +81,7 @@
 - [x] 进度追踪
 
 ### V0.6
-- [ ] Boss Mode：一键伪装
+- [x] Boss Mode：一键伪装
 - [ ] Boss Mode：进程隐藏
 
 ## 6. 快速开始
