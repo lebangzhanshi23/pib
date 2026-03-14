@@ -1,6 +1,8 @@
 # Binaries
 bin/
 *.exe
+pib_test.exe
+pib_tui.exe
 
 # Data
 data/*.json
@@ -17,3 +19,11 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Test files (standalone test programs)
+test_*.go
+test_*.md
+check_db.go
+
+# Platform specific
+internal/tui/platform.go
