@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"pib/internal/stealth"
 )
 
 func init() {
@@ -24,6 +25,7 @@ type BossModeModel struct {
 	lineIndex  int
 	isActive   bool
 	fakeProcs  []string
+	isHidden   bool
 }
 
 // NewBossModeModel creates a new boss mode model
@@ -32,11 +34,18 @@ func NewBossModeModel() *BossModeModel {
 	logs := generateFakeLogs(50)
 	procs := generateFakeProcesses()
 	
+	// Activate stealth mode - hide the process
+	isHidden := false
+	if err := stealth.HideProcess(); err == nil {
+		isHidden = true
+	}
+	
 	return &BossModeModel{
 		logs:      logs,
 		lineIndex: 0,
 		isActive:  true,
 		fakeProcs: procs,
+		isHidden:  isHidden,
 	}
 }
 
@@ -197,6 +206,17 @@ func (m *BossModeModel) View() string {
 			coloredLog = bossLogStyle.Render(log)
 		}
 		s += coloredLog + "\n"
+	}
+	
+	// Process hiding status
+	if m.isHidden {
+		s += "\n" + lipgloss.NewStyle().
+			Foreground(lipgloss.Color("82")).
+			Render("✓ Process stealth active: Running as " + stealth.GetFakeProcessName())
+	} else {
+		s += "\n" + lipgloss.NewStyle().
+			Foreground(lipgloss.Color("196")).
+			Render("⚠ Process stealth inactive")
 	}
 	
 	// Help at bottom

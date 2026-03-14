@@ -82,7 +82,7 @@
 
 ### V0.6
 - [x] Boss Mode：一键伪装
-- [ ] Boss Mode：进程隐藏
+- [x] Boss Mode：进程隐藏
 
 ## 6. 快速开始
 
